@@ -36,21 +36,13 @@ fn main() -> color_eyre::Result<()> {
         let delta = current_time.duration_since(last_time).as_secs_f32();
         last_time = current_time;
         context.poll_events();
-        let pressed_keys = context.get_pressed_keys();
-        if !pressed_keys.is_empty() {
-            println!("Pressed keys: {pressed_keys:#?}");
-        }
         clay.pointer_state(context.mouse_position().into(), context.is_mouse_button_down(input::MouseButton::Left));
         clay.update_scroll_containers(false, context.mouse_wheel().into(), delta);
         // Render
         gl!(gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT));
         let mut c = clay.begin::<_, custom_elements::CustomElements>();
         let progress = boot_progress.poll_progress();
-        if !progress.finished || true {
-            loading_screen.render(progress, &mut c, delta);
-        } else {
-            todo!();
-        }
+        loading_screen.render(progress, &mut c, delta);
         clay_skia_render(
             skia_surface.canvas(),
             c.end(),
@@ -58,7 +50,9 @@ fn main() -> color_eyre::Result<()> {
             &FONTS,
         );
         drop(c);
-        cursor.render(skia_surface.canvas(), context.as_input());
+        if progress.finished {
+            cursor.render(skia_surface.canvas(), context.as_input());
+        }
         skia_context.flush(None);
 
         // If failed to swap buffers, probably the context died so we recover from the error

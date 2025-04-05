@@ -214,7 +214,7 @@ impl DrmContext {
             mode,
             libinput,
             xkb_state,
-            mouse_state: MouseState::new(),
+            mouse_state: MouseState::new_at_middle(disp_width as u32, disp_height as u32),
             keyboard_state: KeyboardState::new(),
         };
         gl::load_with(|symbol| context.get_proc_address(symbol));

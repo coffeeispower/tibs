@@ -147,7 +147,12 @@ impl MouseState {
     pub fn new() -> Self {
         Self::default()
     }
-
+    pub fn new_at_middle(screen_width: u32, screen_height: u32) -> Self {
+        Self {
+            mouse_position: (screen_width / 2, screen_height / 2),
+            ..Self::new()
+        }
+    }
     pub fn new_frame(&mut self) {
         // Reset the mouse wheel delta and button state changes for the new frame
         self.mouse_wheel_delta = (0.0, 0.0);
@@ -213,4 +218,5 @@ impl MouseState {
             _ => {}
         }
     }
+
 }
