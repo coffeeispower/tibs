@@ -1,3 +1,4 @@
 {
-    "rust-analyzer.check.features": ["glfw"]
+    "rust-analyzer.server.path": "rust-analyzer",
+    "rust-analyzer.check.command": "build"
 }

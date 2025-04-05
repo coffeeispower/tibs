@@ -1,0 +1,4 @@
+Using device: /dev/dri/card1
+FPS: 55.54
+FPS: 60.17
+FPS: 60.16

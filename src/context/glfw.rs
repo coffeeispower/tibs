@@ -1,17 +1,20 @@
 use crate::gl;
-use glfw::{Action, Context, Glfw, Key, PWindow, WindowHint};
+use crate::input::KeyboardState;
+use glfw::{Context, Glfw, GlfwReceiver, PWindow, WindowEvent, WindowHint};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
-
 use super::GlesContext;
 
-pub struct GlfwGlesContext {
+pub struct GlfwContext {
     glfw: RefCell<Glfw>,
     window: Rc<RefCell<PWindow>>,
+    keyboard_state: KeyboardState,
+    mouse_wheel_delta: (f64, f64),
+    events: GlfwReceiver<(f64, WindowEvent)>
 }
 
-impl GlfwGlesContext {
+impl GlfwContext {
     pub fn new(title: &str) -> Self {
         let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
 
@@ -22,7 +25,7 @@ impl GlfwGlesContext {
         glfw.window_hint(WindowHint::ContextCreationApi(
             glfw::ContextCreationApi::Egl,
         ));
-        let (mut window, _) = glfw
+        let (mut window, events) = glfw
             .with_primary_monitor(|glfw, m| {
                 glfw.create_window(
                     1,
@@ -38,9 +41,12 @@ impl GlfwGlesContext {
         window.make_current();
         window.set_key_polling(true);
         window.set_cursor_mode(glfw::CursorMode::Hidden);
-        let mut context = GlfwGlesContext {
+        let mut context = GlfwContext {
             glfw: RefCell::new(glfw),
             window: Rc::new(RefCell::new(window)),
+            events,
+            keyboard_state: KeyboardState::new(),
+            mouse_wheel_delta: (0.0, 0.0),
         };
         gl::load_with(|symbol| context.get_proc_address(symbol));
         context
@@ -50,7 +56,7 @@ impl GlfwGlesContext {
     }
 }
 
-impl GlesContext for GlfwGlesContext {
+impl GlesContext for GlfwContext {
     fn get_proc_address(&mut self, fn_name: &str) -> *const c_void {
         self.window.borrow_mut().get_proc_address(fn_name)
     }
@@ -58,9 +64,6 @@ impl GlesContext for GlfwGlesContext {
         self.glfw.borrow_mut().poll_events();
         let mut window = self.window.borrow_mut();
         window.swap_buffers();
-        if window.get_key(Key::Escape) == Action::Press {
-            window.set_should_close(true);
-        }
         true
     }
 
@@ -68,7 +71,5 @@ impl GlesContext for GlfwGlesContext {
         let (width, height) = self.window.borrow().get_size();
         (width as u32, height as u32)
     }
-    fn should_close(&self) -> bool {
-        self.window.borrow().should_close()
-    }
 }
+pub mod input;

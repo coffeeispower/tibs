@@ -26,6 +26,8 @@ mkShell rec {
     cargo
     clippy
     rust-analyzer
+    libinput
+    libxkbcommon
   ];
   LD_LIBRARY_PATH = lib.makeLibraryPath packages;
 }

@@ -226,6 +226,7 @@ impl LoadingScreen {
                                 .font_size((14. * end_progress_animation) as u16)
                                 .alignment(clay_layout::text::TextAlignment::Center)
                                 .end(),
+
                         );
                     },
                 );

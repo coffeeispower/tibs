@@ -19,6 +19,8 @@ in
       freetype
       fontconfig
       glibc
+      libinput
+      libxkbcommon
     ];
     nativeBuildInputs = with pkgs; [
       cmake

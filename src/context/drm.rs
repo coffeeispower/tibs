@@ -1,9 +1,11 @@
 pub use drm::control::Device as ControlDevice;
 pub use drm::Device;
+use input::{InputInterface, MouseState};
+use crate::input::KeyboardState;
+use ::input::Libinput;
 use std::ffi::CString;
 use std::ptr::NonNull;
 use std::time::Duration;
-
 use drm::control::{connector, crtc, Mode};
 use gbm::{AsRaw, BufferObjectFlags};
 use glutin::api::egl;
@@ -77,10 +79,82 @@ impl Card {
         }
     }
 
-    pub fn initialize_egl(self) -> DrmGlesContext {
-        let (connector, crtc, mode) = self.get_connector_and_crtc();
+    fn get_connector_and_crtc(&self) -> (connector::Info, crtc::Info, Mode) {
+        let res = self
+            .resource_handles()
+            .expect("Could not load normal resource ids.");
+        let coninfo: Vec<connector::Info> = res
+            .connectors()
+            .iter()
+            .flat_map(|con| self.get_connector(*con, true))
+            .collect();
+
+        let con = coninfo
+            .iter()
+            .find(|&i| i.state() == connector::State::Connected)
+            .expect("No connected connectors");
+
+        let crtcinfo: Vec<crtc::Info> = res
+            .crtcs()
+            .iter()
+            .flat_map(|crtc| self.get_crtc(*crtc))
+            .collect();
+        let &mode = con.modes().first().expect("No modes found on connector");
+
+        let crtc = crtcinfo.first().expect("No crtcs found");
+
+        (con.clone(), crtc.clone(), mode)
+    }
+}
+pub struct DrmContext {
+    display: egl::display::Display,
+    gbm: gbm::Device<Card>,
+    gbm_surface: gbm::Surface<()>,
+    surface: egl::surface::Surface<WindowSurface>,
+    context: egl::context::PossiblyCurrentContext,
+    connector: connector::Info,
+    crtc: crtc::Info,
+    mode: Mode,
+    libinput: Libinput,
+    xkb_state: xkbcommon::xkb::State,
+    keyboard_state: KeyboardState,
+    mouse_state: MouseState
+}
+
+fn find_egl_config(egl_display: &egl::display::Display) -> egl::config::Config {
+    unsafe { egl_display.find_configs(ConfigTemplateBuilder::new().build()) }
+        .unwrap()
+        .reduce(|config, acc| {
+            if config.num_samples() > acc.num_samples() {
+                config
+            } else {
+                acc
+            }
+        })
+        .expect("No available configs")
+}
+
+impl GlesContext for DrmContext {
+    fn get_proc_address(&mut self, fn_name: &str) -> *const std::ffi::c_void {
+        let symbol = CString::new(fn_name).unwrap();
+        self.display.get_proc_address(symbol.as_c_str())
+    }
+    fn swap_buffers(&self) -> bool {
+        self._swap_buffers()
+            .map_err(|e| println!("Failed to swap buffers: {}", e))
+            .is_ok()
+    }
+
+    fn size(&self) -> (u32, u32) {
+        (self.mode.size().0 as u32, self.mode.size().1 as u32)
+    }
+}
+impl DrmContext {
+    pub fn new() -> Self {
+        let card = Card::open_global();
+        let (connector, crtc, mode) = card.get_connector_and_crtc();
         let (disp_width, disp_height) = mode.size();
-        let gbm = gbm::Device::new(self).unwrap();
+        let gbm = gbm::Device::new(card).unwrap();
         let rdh = RawDisplayHandle::Gbm(GbmDisplayHandle::new(
             NonNull::new(gbm.as_raw_mut()).unwrap().cast(),
         ));
@@ -116,7 +190,20 @@ impl Card {
                 .make_current(&surface)
                 .unwrap()
         };
-        let mut context = DrmGlesContext {
+        let mut libinput = Libinput::new_with_udev(InputInterface);
+        libinput.udev_assign_seat("seat0").unwrap();
+        let xkb_context = xkbcommon::xkb::Context::new(xkbcommon::xkb::CONTEXT_NO_FLAGS);
+        let xkb_keymap = xkbcommon::xkb::Keymap::new_from_names(
+            &xkb_context,
+            "",
+            "",
+            "",
+            "",
+            None,
+            xkbcommon::xkb::KEYMAP_COMPILE_NO_FLAGS,
+        ).unwrap();
+        let xkb_state = xkbcommon::xkb::State::new(&xkb_keymap);
+        let mut context = DrmContext {
             display: egl_display,
             gbm,
             gbm_surface,
@@ -125,81 +212,13 @@ impl Card {
             connector,
             crtc,
             mode,
+            libinput,
+            xkb_state,
+            mouse_state: MouseState::new(),
+            keyboard_state: KeyboardState::new(),
         };
         gl::load_with(|symbol| context.get_proc_address(symbol));
         context
-    }
-
-    fn get_connector_and_crtc(&self) -> (connector::Info, crtc::Info, Mode) {
-        let res = self
-            .resource_handles()
-            .expect("Could not load normal resource ids.");
-        let coninfo: Vec<connector::Info> = res
-            .connectors()
-            .iter()
-            .flat_map(|con| self.get_connector(*con, true))
-            .collect();
-
-        let con = coninfo
-            .iter()
-            .find(|&i| i.state() == connector::State::Connected)
-            .expect("No connected connectors");
-
-        let crtcinfo: Vec<crtc::Info> = res
-            .crtcs()
-            .iter()
-            .flat_map(|crtc| self.get_crtc(*crtc))
-            .collect();
-        let &mode = con.modes().first().expect("No modes found on connector");
-
-        let crtc = crtcinfo.first().expect("No crtcs found");
-
-        (con.clone(), crtc.clone(), mode)
-    }
-}
-pub struct DrmGlesContext {
-    display: egl::display::Display,
-    gbm: gbm::Device<Card>,
-    gbm_surface: gbm::Surface<()>,
-    surface: egl::surface::Surface<WindowSurface>,
-    context: egl::context::PossiblyCurrentContext,
-    connector: connector::Info,
-    crtc: crtc::Info,
-    mode: Mode,
-}
-
-fn find_egl_config(egl_display: &egl::display::Display) -> egl::config::Config {
-    unsafe { egl_display.find_configs(ConfigTemplateBuilder::new().build()) }
-        .unwrap()
-        .reduce(|config, acc| {
-            if config.num_samples() > acc.num_samples() {
-                config
-            } else {
-                acc
-            }
-        })
-        .expect("No available configs")
-}
-
-impl GlesContext for DrmGlesContext {
-    fn get_proc_address(&mut self, fn_name: &str) -> *const std::ffi::c_void {
-        let symbol = CString::new(fn_name).unwrap();
-        self.display.get_proc_address(symbol.as_c_str())
-    }
-    fn swap_buffers(&self) -> bool {
-        self._swap_buffers()
-            .map_err(|e| println!("Failed to swap buffers: {}", e))
-            .is_ok()
-    }
-
-    fn size(&self) -> (u32, u32) {
-        (self.mode.size().0 as u32, self.mode.size().1 as u32)
-    }
-}
-impl DrmGlesContext {
-    pub fn new_from_default_card() -> Self {
-        let card = Card::open_global();
-        card.initialize_egl()
     }
 
     fn _swap_buffers(&self) -> color_eyre::Result<()> {
@@ -218,4 +237,8 @@ impl DrmGlesContext {
         }
         Ok(())
     }
+    
 }
+
+
+mod input;
