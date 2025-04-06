@@ -147,7 +147,10 @@ impl Input for DrmContext {
     }
     
     fn is_mouse_button_released(&self, button: crate::input::MouseButton) -> bool {
-        self.mouse_state.buttons_state_changes.get(&button).unwrap_or(&false) == &false
+        self.mouse_state
+            .buttons_state_changes.get(&button)
+            .map(|&state| !state)
+            .unwrap_or(false)
     }
 
     fn has_focus(&self) -> bool {

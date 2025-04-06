@@ -6,6 +6,7 @@ pub mod custom_elements;
 pub mod fps_counter;
 pub mod gl;
 pub mod gl_errors;
+pub mod login_screen;
 #[macro_use]
 pub mod animation;
 pub mod context;
@@ -56,10 +57,15 @@ fn main() -> color_eyre::Result<()> {
     clay.set_measure_text_function(create_measure_text_function(&FONTS));
     let assets = AssetCache::new(std::env::var("TIBS_ASSETS_FOLDER").unwrap_or("assets".into()))?;
     let mut loading_screen = LoadingScreen::new(&assets);
+    let mut login_screen = login_screen::LoginScreen::new(&assets);
     let mut cursor = Cursor::new(None);
+    let skip_animation = {
+        let progress = boot_progress.poll_progress();
+        progress.finished && !progress.has_failed_services()
+    };
     let mut screen_slide_animation = BasicAnimation::new("screen_slide", 1.0, ease_in_out_circ);
-    let mut screen_slide_animation_progress: f32 = 0.;
-    let mut show_login_screen = false;
+    let mut show_login_screen = skip_animation;
+    let mut screen_slide_animation_progress: f32 = skip_animation as u8 as f32;
     while !context.should_close() {
         context.poll_events();
 
@@ -75,12 +81,13 @@ fn main() -> color_eyre::Result<()> {
         let mouse_position = context.mouse_position();
 
         let progress = boot_progress.poll_progress();
-
-        if let Some((_, p)) = screen_slide_animation
-            .update(if show_login_screen { delta } else { -delta })
-            .get(0)
-        {
-            screen_slide_animation_progress = *p;
+        if !skip_animation {
+            if let Some((_, p)) = screen_slide_animation
+                .update(if show_login_screen { delta } else { -delta })
+                .get(0)
+            {
+                screen_slide_animation_progress = *p;
+            }
         }
 
         // Render
@@ -90,7 +97,6 @@ fn main() -> color_eyre::Result<()> {
         canvas.save();
         canvas.translate(Point::new(0.0, -camera_y));
         {
-
             clay.pointer_state(
                 (mouse_position.0, mouse_position.1 + camera_y).into(),
                 context.is_mouse_button_down(input::MouseButton::Left),
@@ -115,14 +121,21 @@ fn main() -> color_eyre::Result<()> {
             }
         }
         if screen_slide_animation_progress != 0.0 {
-        {
-            clay.pointer_state(
-                    (mouse_position.0, mouse_position.1 - screen_height as f32 + camera_y).into(),
+            canvas.translate(Point::new(0.0, screen_height as f32));
+            {
+                clay.pointer_state(
+                    (
+                        mouse_position.0,
+                        mouse_position.1 - screen_height as f32 + camera_y,
+                    )
+                        .into(),
                     context.is_mouse_button_down(input::MouseButton::Left),
                 );
                 clay.update_scroll_containers(false, context.mouse_wheel().into(), delta);
             }
-            // println!("Render login screen");
+            let mut c = clay.begin::<_, CustomElements>();
+            login_screen.render(&mut c);
+            clay_skia_render(canvas, c.end(), CustomElements::render, &FONTS);
         }
         canvas.restore();
 

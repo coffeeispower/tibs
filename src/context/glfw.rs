@@ -14,6 +14,7 @@ pub struct GlfwContext {
     mouse_wheel_delta: (f64, f64),
     events: GlfwReceiver<(f64, WindowEvent)>,
     mouse_state_changes: HashMap<MouseButton, bool>,
+    old_mouse_state: HashMap<MouseButton, bool>,
 }
 
 impl GlfwContext {
@@ -51,12 +52,24 @@ impl GlfwContext {
             keyboard_state: KeyboardState::new(),
             mouse_wheel_delta: (0.0, 0.0),
             mouse_state_changes: HashMap::new(),
+            old_mouse_state: HashMap::new(),
         };
         gl::load_with(|symbol| context.get_proc_address(symbol));
         context
     }
     pub fn glfw_window(&self) -> Rc<RefCell<PWindow>> {
         Rc::clone(&self.window)
+    }
+    fn on_mouse_button_change(&mut self, button: MouseButton, action: glfw::Action) {
+        match action {
+            glfw::Action::Press => {
+                self.mouse_state_changes.insert(button, true);
+            }
+            glfw::Action::Release => {
+                self.mouse_state_changes.insert(button, false);
+            }
+            _ => {}
+        }
     }
 }
 

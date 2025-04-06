@@ -211,22 +211,20 @@ impl Input for GlfwContext {
                     self.mouse_wheel_delta.0 += xoffset;
                     self.mouse_wheel_delta.1 += yoffset;
                 }
-                glfw::WindowEvent::MouseButton(button, action, _) => {
-                    self.mouse_state_changes.insert(
-                        button,
-                        action == Action::Press,
-                    );
-                    match action {
-                        Action::Press => {
-                            self.mouse_state_changes.insert(button, true);
-                        }
-                        Action::Release => {
-                            self.mouse_state_changes.insert(button, false);
-                        }
-                        _ => {}
-                    }
-                }
                 _ => {}
+            }
+        }
+        let buttons = [
+            GlfwMouseButton::Left,
+            GlfwMouseButton::Right,
+            GlfwMouseButton::Middle,
+        ];
+        for button in buttons {
+            let action = self.window.borrow().get_mouse_button(button);
+            let is_pressed = action == Action::Press || action == Action::Repeat;
+            if self.old_mouse_state.get(&button) != Some(&is_pressed) {
+                self.old_mouse_state.insert(button, is_pressed);
+                self.on_mouse_button_change(button, action);
             }
         }
     }
@@ -243,8 +241,8 @@ impl Input for GlfwContext {
         };
         self.mouse_state_changes
             .get(&button)
-            .copied()
-            .unwrap_or(true)
+            .map(|&state| !state)
+            .unwrap_or(false)
     }
 
     fn is_mouse_button_pressed(&self, button: crate::input::MouseButton) -> bool {
