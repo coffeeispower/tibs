@@ -1841,6 +1841,7 @@ dependencies = [
  "raw-window-handle",
  "skia-safe",
  "smol",
+ "uzers",
  "xkbcommon",
  "zbus_systemd",
 ]
@@ -1960,6 +1961,16 @@ name = "unicode-ident"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00e2473a93778eb0bad35909dff6a10d28e63f792f16ed15e404fca9d5eeedbe"
+
+[[package]]
+name = "uzers"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4df81ff504e7d82ad53e95ed1ad5b72103c11253f39238bcc0235b90768a97dd"
+dependencies = [
+ "libc",
+ "log",
+]
 
 [[package]]
 name = "valuable"

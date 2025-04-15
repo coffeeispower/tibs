@@ -1,5 +1,6 @@
 pub use drm::control::Device as ControlDevice;
 pub use drm::Device;
+use drm::VblankWaitFlags;
 use input::{InputInterface, MouseState};
 use crate::input::KeyboardState;
 use ::input::Libinput;
@@ -312,6 +313,13 @@ impl DrmContext {
             self.surface.swap_buffers(&self.context)?;
             let frontbuffer = self.gbm_surface.lock_front_buffer()?;
             let fb = self.gbm.add_framebuffer(&frontbuffer, 24, 32)?;
+
+            self.gbm.wait_vblank(
+                drm::VblankWaitTarget::Relative(1),
+                VblankWaitFlags::empty(),
+                u32::from(self.crtc.handle()) >> 27,
+                0,
+            )?;
             self.gbm
                 .set_crtc(
                     self.crtc.handle(),
