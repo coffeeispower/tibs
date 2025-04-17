@@ -26,7 +26,7 @@ uzers = "0.12.1"
 
 [dependencies.clay-layout]
 features = ["debug", "skia-renderer"]
-git = "https://github.com/clay-ui-rs/clay"
+git = "https://github.com/coffeeispower/clay-rs"
 
 [build-dependencies]
 gl_generator = "0"

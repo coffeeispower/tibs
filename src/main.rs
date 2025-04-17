@@ -1,6 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use clay_layout::{fixed, grow, id, Declaration};
 use skia_clay::SkiaClayScope;
+use xkbcommon::xkb::Keysym;
 
 pub mod custom_elements;
 pub mod fps_counter;
@@ -18,6 +20,7 @@ pub mod progress_watcher;
 pub mod skia;
 pub mod skia_clay;
 pub mod skia_image_asset;
+pub mod textbox;
 pub type TibsClayScope<'clay, 'render> =
     SkiaClayScope<'clay, 'render, custom_elements::CustomElements>;
 
@@ -31,7 +34,7 @@ use crate::{
 use assets_manager::AssetCache;
 use context::select_and_init_context;
 use skia::{create_skia_surface, init_skia};
-use skia_safe::{FontMgr, FontStyle, Point, Typeface};
+use skia_safe::{FontMgr, FontStyle, Typeface};
 use std::{mem::ManuallyDrop, sync::LazyLock};
 
 static UBUNTU_FONT: LazyLock<Typeface> = LazyLock::new(|| {
@@ -39,7 +42,7 @@ static UBUNTU_FONT: LazyLock<Typeface> = LazyLock::new(|| {
         .match_family_style("UbuntuSans NF", FontStyle::normal())
         .unwrap()
 });
-static FONTS: LazyLock<Vec<&Typeface>> = LazyLock::new(|| vec![&UBUNTU_FONT]);
+pub static FONTS: LazyLock<Vec<&Typeface>> = LazyLock::new(|| vec![&UBUNTU_FONT]);
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -66,13 +69,17 @@ fn main() -> color_eyre::Result<()> {
     let mut screen_slide_animation = BasicAnimation::new("screen_slide", 1.0, ease_in_out_circ);
     let mut show_login_screen = skip_animation;
     let mut screen_slide_animation_progress: f32 = skip_animation as u8 as f32;
+    let mut devtools = false;
     while !context.should_close() {
         context.poll_events();
 
         if !context.has_focus() {
             continue;
         }
-
+        if context.is_key_pressed(Keysym::Caps_Lock) {
+            devtools = !devtools;
+            clay.set_debug_mode(devtools);
+        }
         let (screen_width, screen_height) = context.size();
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(last_time).as_secs_f32();
@@ -91,53 +98,61 @@ fn main() -> color_eyre::Result<()> {
         }
 
         // Render
-
         gl!(gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT));
         let canvas = skia_surface.canvas();
-        canvas.save();
-        canvas.translate(Point::new(0.0, -camera_y));
         {
-            clay.pointer_state(
-                (mouse_position.0, mouse_position.1 + camera_y).into(),
-                context.is_mouse_button_down(input::MouseButton::Left),
+            let mut c = clay.begin::<_, CustomElements>();
+            let root_container_scroll = c.scroll_container_data(c.id("root"));
+
+            if let Some(root_container_scroll) = root_container_scroll {
+                unsafe {
+                    (*root_container_scroll.scrollPosition).y = -camera_y
+                }
+            }
+            c.with(
+                Declaration::new()
+                    .layout()
+                    .direction(clay_layout::layout::LayoutDirection::TopToBottom)
+                    .width(grow!())
+                    .height(grow!())
+                    .end()
+                    .scroll(true, true)
+                    .id(c.id("root")),
+                |c| {
+                    let continue_anyway_button_id = c.id("loading_continue_anyway_button");
+                    let continue_anyway_button_clicked = c.pointer_over(continue_anyway_button_id)
+                        && context.is_mouse_button_released(input::MouseButton::Left);
+                    if continue_anyway_button_clicked
+                        || (loading_screen.get_animation_progress("progress") >= 0.99
+                            && !progress.has_failed_services())
+                    {
+                        show_login_screen = true;
+                    }
+
+                    c.with(
+                        Declaration::new()
+                            .layout()
+                            .width(grow!())
+                            .height(fixed!(screen_height as f32))
+                            .end(),
+                        |c| {
+                            loading_screen.render(progress, c, delta);
+                        },
+                    );
+                    c.with(
+                        Declaration::new()
+                            .layout()
+                            .width(grow!())
+                            .height(fixed!(screen_height as f32))
+                            .end(),
+                        |c| {
+                            login_screen.render(c, context.as_input());
+                        },
+                    );
+                },
             );
-            clay.update_scroll_containers(false, context.mouse_wheel().into(), delta);
-
-            let mut c = clay.begin::<_, CustomElements>();
-
-            let continue_anyway_button_id = c.id("loading_continue_anyway_button");
-            let continue_anyway_button_clicked = c.pointer_over(continue_anyway_button_id)
-                && context.is_mouse_button_released(input::MouseButton::Left);
-            if continue_anyway_button_clicked
-                || (loading_screen.get_animation_progress("progress") >= 0.99
-                    && !progress.has_failed_services())
-            {
-                show_login_screen = true;
-            }
-
-            if screen_slide_animation_progress != 1.0 {
-                loading_screen.render(progress, &mut c, delta);
-                clay_skia_render(canvas, c.end(), CustomElements::render, &FONTS);
-            }
-        }
-        if screen_slide_animation_progress != 0.0 {
-            canvas.translate(Point::new(0.0, screen_height as f32));
-            {
-                clay.pointer_state(
-                    (
-                        mouse_position.0,
-                        mouse_position.1 - screen_height as f32 + camera_y,
-                    )
-                        .into(),
-                    context.is_mouse_button_down(input::MouseButton::Left),
-                );
-                clay.update_scroll_containers(false, context.mouse_wheel().into(), delta);
-            }
-            let mut c = clay.begin::<_, CustomElements>();
-            login_screen.render(&mut c);
             clay_skia_render(canvas, c.end(), CustomElements::render, &FONTS);
         }
-        canvas.restore();
 
         if progress.finished {
             cursor.render(canvas, context.as_input(), "default");
@@ -156,6 +171,12 @@ fn main() -> color_eyre::Result<()> {
             skia_surface = create_skia_surface(&mut skia_context, screen_width, screen_height)?;
             clay.set_layout_dimensions((screen_width as f32, screen_height as f32).into());
         }
+
+        clay.pointer_state(
+            (mouse_position.0, mouse_position.1).into(),
+            context.is_mouse_button_down(input::MouseButton::Left),
+        );
+        clay.update_scroll_containers(true, context.mouse_wheel().into(), delta);
 
         if let Some(fps) = fps_counter.tick() {
             println!("FPS: {:.2}", fps);

@@ -4,6 +4,8 @@ use assets_manager::AssetCache;
 use clay_layout::fit;
 use skia_safe::Image;
 use uzers::os::unix::UserExt;
+use crate::input::Input;
+use crate::textbox::Textbox;
 use crate::{custom_elements::CustomElements, skia_image_asset::SkiaImageAsset};
 use crate::TibsClayScope;
 use uzers::{all_users, User};
@@ -21,7 +23,8 @@ pub struct LoginScreen {
     user_list: Vec<User>,
     selected_user: u32,
     login_icon: Image,
-    avatars: HashMap<u32, CustomElements>
+    avatars: HashMap<u32, CustomElements>,
+    password_input: Textbox
 }
 
 fn is_user_uid(uid: u32) -> bool {
@@ -48,13 +51,15 @@ impl LoginScreen {
             user_list,
             selected_user,
             login_icon,
+            password_input: Textbox::new("login-input", true)
         }
     }
 
-    pub fn render<'clay, 'render>(&'render self, c: &mut TibsClayScope<'clay, 'render>)
+    pub fn render<'clay, 'render>(&'render mut self, c: &mut TibsClayScope<'clay, 'render>, input: &dyn Input)
     where
         'clay: 'render,
     {
+        self.password_input.update(input, &mut *c);
         c.with(
             Declaration::new()
                 .background_color((0x0F, 0x14, 0x19).into())
@@ -227,8 +232,7 @@ impl LoginScreen {
                                     .child_gap(14)
                                     .end(),
                                 |c| {
-                                    // Textbox for future input
-                                    Self::render_textbox(c);
+                                    self.password_input.render(c);
                                     // "Login" button
                                     Self::render_login_button(c, &self.login_icon);
                                 },
@@ -240,23 +244,6 @@ impl LoginScreen {
         }
     }
 
-    fn render_textbox<'clay, 'render>(c: &mut TibsClayScope<'clay, 'render>)
-    where
-        'clay: 'render,
-    {
-        c.with(
-            Declaration::new()
-                .layout()
-                .width(fixed!(300.0))
-                .height(fixed!(50.0))
-                .end()
-                .background_color((0x0E, 0x1A, 0x26).into())
-                .corner_radius()
-                .all(10.0)
-                .end(),
-            |_| {},
-        );
-    }
 
     fn render_login_button<'clay, 'render>(
         c: &mut TibsClayScope<'clay, 'render>,

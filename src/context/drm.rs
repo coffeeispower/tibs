@@ -275,9 +275,9 @@ impl DrmContext {
         let xkb_context = xkbcommon::xkb::Context::new(xkbcommon::xkb::CONTEXT_NO_FLAGS);
         let xkb_keymap = xkbcommon::xkb::Keymap::new_from_names(
             &xkb_context,
-            "",
-            "",
-            "",
+            "evdev",
+            "evdev",
+            "pt",
             "",
             None,
             xkbcommon::xkb::KEYMAP_COMPILE_NO_FLAGS,

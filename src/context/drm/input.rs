@@ -14,7 +14,7 @@ use input::{
     LibinputInterface,
 };
 use libc::{O_RDONLY, O_RDWR, O_WRONLY};
-use xkbcommon::xkb::{self, Keycode};
+use xkbcommon::xkb::{self, Keycode, Keysym};
 
 use crate::{gles_context::GlesContext, input::Input};
 
@@ -94,7 +94,14 @@ impl Input for DrmContext {
     fn mouse_wheel(&self) -> (f32, f32) {
         // Return the accumulated mouse wheel delta for this frame.
         let (x, y) = self.mouse_state.mouse_wheel_delta;
-        (x as f32, y as f32)
+        if x != 0.0 || y != 0.0 {
+            dbg!(x, y);
+        }
+        if self.is_key_down(Keysym::Shift_L){
+            (y as f32, x as f32)
+        } else {
+            (x as f32, y as f32)
+        }
     }
     fn poll_events(&mut self) {
         let new_focus = super::TTY_FOCUS.load(std::sync::atomic::Ordering::Relaxed);
@@ -127,7 +134,8 @@ impl Input for DrmContext {
         for event in &mut self.libinput {
             match event {
                 input::Event::Keyboard(keyboard_event) => {
-                    let keycode: Keycode = keyboard_event.key().into();
+                    let keycode: Keycode = (keyboard_event.key() + 8).into();
+                    
                     let keysyms = self.xkb_state.key_get_syms(keycode);
                     let keystate = keyboard_event.key_state();
                     for &keysym in keysyms {
@@ -225,24 +233,40 @@ impl MouseState {
                 self.mouse_position = (new_position.0 as u32, new_position.1 as u32);
             }
             PointerEvent::ScrollWheel(pointer_scroll_wheel_event) => {
-                // Update mouse wheel delta
-                self.mouse_wheel_delta.0 +=
-                    pointer_scroll_wheel_event.scroll_value_v120(LibInputPointerAxis::Horizontal);
-                self.mouse_wheel_delta.1 +=
-                    pointer_scroll_wheel_event.scroll_value_v120(LibInputPointerAxis::Vertical);
+                if pointer_scroll_wheel_event.has_axis(LibInputPointerAxis::Horizontal){
+                    self.mouse_wheel_delta.0 +=
+                    pointer_scroll_wheel_event.scroll_value(LibInputPointerAxis::Horizontal);
+                }
+                
+                if pointer_scroll_wheel_event.has_axis(LibInputPointerAxis::Vertical){
+                    self.mouse_wheel_delta.1 +=
+                        pointer_scroll_wheel_event.scroll_value(LibInputPointerAxis::Vertical);
+                }
             }
             PointerEvent::ScrollFinger(pointer_scroll_finger_event) => {
-                self.mouse_wheel_delta.0 +=
+                
+                if pointer_scroll_finger_event.has_axis(LibInputPointerAxis::Horizontal){
+                    self.mouse_wheel_delta.0 +=
                     pointer_scroll_finger_event.scroll_value(LibInputPointerAxis::Horizontal);
-                self.mouse_wheel_delta.1 +=
-                    pointer_scroll_finger_event.scroll_value(LibInputPointerAxis::Vertical);
+                }
+                
+                if pointer_scroll_finger_event.has_axis(LibInputPointerAxis::Vertical){
+                    self.mouse_wheel_delta.1 +=
+                        pointer_scroll_finger_event.scroll_value(LibInputPointerAxis::Vertical);
+                }
             }
             PointerEvent::ScrollContinuous(pointer_scroll_continuous_event) => {
-                self.mouse_wheel_delta.0 +=
+                if pointer_scroll_continuous_event.has_axis(LibInputPointerAxis::Horizontal){
+                    self.mouse_wheel_delta.0 +=
                     pointer_scroll_continuous_event.scroll_value(LibInputPointerAxis::Horizontal);
-                self.mouse_wheel_delta.1 +=
-                    pointer_scroll_continuous_event.scroll_value(LibInputPointerAxis::Vertical);
+                }
+                
+                if pointer_scroll_continuous_event.has_axis(LibInputPointerAxis::Vertical){
+                    self.mouse_wheel_delta.1 +=
+                        pointer_scroll_continuous_event.scroll_value(LibInputPointerAxis::Vertical);
+                }
             }
+            // e => eprintln!("Unknown event: {e:#?}")
             _ => {}
         }
     }

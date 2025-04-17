@@ -189,9 +189,9 @@ impl Input for GlfwContext {
         self.mouse_wheel_delta = (0.0, 0.0);
         self.keyboard_state.new_frame();
         self.mouse_state_changes.clear();
+
         // Poll GLFW for events and process them.
         self.glfw.borrow_mut().poll_events();
-
         for (_, event) in glfw::flush_messages(&self.events) {
             match event {
                 glfw::WindowEvent::Key(key, _scancode, action, _mods) => {
@@ -210,10 +210,12 @@ impl Input for GlfwContext {
                 glfw::WindowEvent::Scroll(xoffset, yoffset) => {
                     self.mouse_wheel_delta.0 += xoffset;
                     self.mouse_wheel_delta.1 += yoffset;
+                    dbg!(xoffset, yoffset);
                 }
                 _ => {}
             }
         }
+
         let buttons = [
             GlfwMouseButton::Left,
             GlfwMouseButton::Right,

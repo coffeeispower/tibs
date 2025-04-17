@@ -398,7 +398,7 @@ dependencies = [
 [[package]]
 name = "clay-layout"
 version = "0.2.0"
-source = "git+https://github.com/clay-ui-rs/clay#79c0fbbbf7637e7ca0ea5f7e8ef3aaee2da488df"
+source = "git+https://github.com/coffeeispower/clay-rs#a7b31623afa95b0fdbd13b9639938fe412671f88"
 dependencies = [
  "cc",
  "skia-safe",
@@ -2089,7 +2089,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

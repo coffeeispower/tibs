@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, time::{Duration, Instant}};
 
 use xkbcommon::xkb;
 use input::event::keyboard::KeyState as LibInputKeyState;
@@ -54,92 +54,129 @@ pub trait Input {
     fn has_focus(&self) -> bool;
 }
 
-
-
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum KeyStatus {
     Pressed,
-    Released,
     Down,
+    Released,
     Up,
+}
+
+#[derive(Debug)]
+struct KeyInfo {
+    state: KeyStatus,
+    next_repeat: Option<Instant>,
 }
 
 #[derive(Default)]
 pub(crate) struct KeyboardState {
-    keys: HashMap<xkb::Keysym, KeyStatus>,
+    keys: HashMap<xkb::Keysym, KeyInfo>,
+    repeat_delay: Duration,
+    repeat_interval: Duration,
+    repeat_keys: Vec<xkb::Keysym>,
 }
 
 impl KeyboardState {
+    /// Cria um novo KeyboardState com valores padrão para repeat.
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    // Prepares a new frame by updating transient states.
-    // Keys that were Pressed become Down and keys that were Released become Up.
-    // Keys in the Up state are removed from the map.
-    pub fn new_frame(&mut self) {
-        for (_, state) in &mut self.keys {
-            *state = match *state {
-                KeyStatus::Pressed => KeyStatus::Down,
-                KeyStatus::Released => KeyStatus::Up,
-                other => other,
-            };
+        Self {
+            keys: HashMap::new(),
+            repeat_delay: Duration::from_millis(250),
+            repeat_interval: Duration::from_millis(20),
+            repeat_keys: Vec::new(),
         }
     }
 
-    // Process a keyboard event to update the state.
+    /// Atualiza o estado de todas as teclas e agenda eventos de repeat.
+    pub fn new_frame(&mut self) {
+        let now = Instant::now();
+        self.repeat_keys.clear();
+
+        for (&key, info) in &mut self.keys {
+            match info.state {
+                KeyStatus::Pressed => {
+                    info.state = KeyStatus::Down;
+                    info.next_repeat = Some(now + self.repeat_delay);
+                }
+                KeyStatus::Down => {
+                    if let Some(next_time) = info.next_repeat {
+                        if now >= next_time {
+                            // Agrega evento de repeat
+                            self.repeat_keys.push(key);
+                            // Agenda próximo repeat
+                            info.next_repeat = Some(now + self.repeat_interval);
+                        }
+                    }
+                }
+                KeyStatus::Released => {
+                    info.state = KeyStatus::Up;
+                    info.next_repeat = None;
+                }
+                KeyStatus::Up => {}
+            }
+        }
+
+        // Remove teclas em Up
+        self.keys.retain(|_, info| info.state != KeyStatus::Up);
+    }
+
+    /// Processa eventos de teclado, marcando Pressed ou Released.
     pub fn process_keyboard_event(&mut self, key: xkb::Keysym, key_state: LibInputKeyState) {
         match key_state {
             LibInputKeyState::Pressed => {
-                // Only set to Pressed if the key isn't already down.
-                if let Some(existing) = self.keys.get(&key) {
-                    if *existing == KeyStatus::Down || *existing == KeyStatus::Pressed {
-                        return;
-                    }
+                let already = self.keys.get(&key)
+                    .map_or(false, |info| matches!(info.state, KeyStatus::Pressed | KeyStatus::Down));
+                if !already {
+                    self.keys.insert(
+                        key,
+                        KeyInfo { state: KeyStatus::Pressed, next_repeat: None },
+                    );
                 }
-                self.keys.insert(key, KeyStatus::Pressed);
             }
             LibInputKeyState::Released => {
-                // Mark the key as Released if it was previously down.
-                if let Some(existing) = self.keys.get(&key) {
-                    if *existing == KeyStatus::Down || *existing == KeyStatus::Pressed {
-                        self.keys.insert(key, KeyStatus::Released);
+                if let Some(info) = self.keys.get_mut(&key) {
+                    if matches!(info.state, KeyStatus::Pressed | KeyStatus::Down) {
+                        info.state = KeyStatus::Released;
                     }
                 }
             }
         }
     }
 
-    // Returns true if the key is currently held down.
+    /// Retorna true se a tecla está pressionada ou mantida.
     pub fn is_key_down(&self, key: xkb::Keysym) -> bool {
-        matches!(self.keys.get(&key), Some(KeyStatus::Pressed | KeyStatus::Down))
+        self.keys.get(&key)
+            .map_or(false, |info| matches!(info.state, KeyStatus::Pressed | KeyStatus::Down))
     }
 
-    // Returns true if the key was pressed during this frame.
+    /// Retorna true se a tecla foi pressionada neste frame.
     pub fn was_key_pressed(&self, key: xkb::Keysym) -> bool {
-        matches!(self.keys.get(&key), Some(KeyStatus::Pressed))
+        self.keys.get(&key)
+            .map_or(false, |info| info.state == KeyStatus::Pressed) || self.should_repeat_key(key)
     }
 
-    // Returns true if the key was released during this frame.
+    /// Retorna true se a tecla foi libertada neste frame.
     pub fn was_key_released(&self, key: xkb::Keysym) -> bool {
-        matches!(self.keys.get(&key), Some(KeyStatus::Released))
+        self.keys.get(&key)
+            .map_or(false, |info| info.state == KeyStatus::Released)
     }
 
+    /// Retorna true se a tecla gerou um evento de repeat neste frame.
+    pub fn should_repeat_key(&self, key: xkb::Keysym) -> bool {
+        self.repeat_keys.contains(&key)
+    }
 
+    /// Retorna todas as teclas que foram pressionadas neste frame.
     pub fn get_pressed_keys(&self) -> HashSet<xkb::Keysym> {
-        self.keys
-            .iter()
-            .filter(|(_, &state)| state == KeyStatus::Pressed)
-            .map(|(&key, _)| key)
+        self.keys.iter()
+            .filter_map(|(&k, info)| if info.state == KeyStatus::Pressed || self.should_repeat_key(k) { Some(k) } else { None })
             .collect()
     }
 
+    /// Retorna todas as teclas que foram libertadas neste frame.
     pub fn get_released_keys(&self) -> HashSet<xkb::Keysym> {
-        self.keys
-            .iter()
-            .filter(|(_, &state)| state == KeyStatus::Released)
-            .map(|(&key, _)| key)
+        self.keys.iter()
+            .filter_map(|(&k, info)| if info.state == KeyStatus::Released { Some(k) } else { None })
             .collect()
     }
 }
