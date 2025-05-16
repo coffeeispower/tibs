@@ -1,25 +1,31 @@
-pub use drm::control::Device as ControlDevice;
-pub use drm::Device;
-use drm::VblankWaitFlags;
-use input::{InputInterface, MouseState};
 use crate::input::KeyboardState;
 use ::input::Libinput;
-use std::ffi::CString;
-use std::os::fd::AsRawFd;
-use std::ptr::NonNull;
-use std::time::Duration;
-use drm::control::{connector, crtc, Mode};
+use drm::control::atomic::AtomicModeReq;
+pub use drm::control::Device as ControlDevice;
+use drm::control::{
+    self, connector, crtc, plane, property, AtomicCommitFlags, Mode, PageFlipFlags, PageFlipTarget,
+};
+pub use drm::Device;
+use drm::VblankWaitFlags;
 use gbm::{AsRaw, BufferObjectFlags};
 use glutin::api::egl;
 use glutin::config::ConfigTemplateBuilder;
 use glutin::context::ContextAttributesBuilder;
+use glutin::display::{AsRawDisplay, RawDisplay};
 use glutin::prelude::*;
 use glutin::surface::{SurfaceAttributesBuilder, WindowSurface};
+use input::{InputInterface, MouseState};
+use libc::{c_char, c_int, c_short, ioctl, SIGUSR1, SIGUSR2};
 use raw_window_handle::{GbmDisplayHandle, GbmWindowHandle, RawDisplayHandle, RawWindowHandle};
+use std::collections::HashMap;
+use std::ffi::{c_void, CString};
+use std::fs::OpenOptions;
+use std::os::fd::AsRawFd;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
-use std::fs::OpenOptions;
-use libc::{c_char, c_short, c_int, ioctl, SIGUSR1, SIGUSR2};
+use std::time::Duration;
+use std::u64;
 
 static TTY_FOCUS: AtomicBool = AtomicBool::new(true);
 static TTY: LazyLock<std::fs::File> = LazyLock::new(|| {
@@ -46,12 +52,16 @@ const VT_RELDISP: u64 = 0x5605; // from <linux/vt.h>
 unsafe extern "C" fn handle_release(_sig: i32) {
     TTY_FOCUS.store(false, Ordering::Relaxed);
     libc::ioctl(TTY.as_raw_fd(), VT_RELDISP, 1);
-    set_tty_text_mode(TTY.as_raw_fd()).map_err(|e| println!("Failed to set text mode: {e}")).ok();
+    set_tty_text_mode(TTY.as_raw_fd())
+        .map_err(|e| println!("Failed to set text mode: {e}"))
+        .ok();
 }
 
 unsafe extern "C" fn handle_acquire(_sig: i32) {
     TTY_FOCUS.store(true, Ordering::Relaxed);
-    set_tty_graphics_mode(TTY.as_raw_fd()).map_err(|e| println!("Failed to set graphics mode: {e}")).ok();
+    set_tty_graphics_mode(TTY.as_raw_fd())
+        .map_err(|e| println!("Failed to set graphics mode: {e}"))
+        .ok();
 }
 const KDSETMODE: u64 = 0x4B3A; // from <linux/kd.h>
 const KD_TEXT: c_int = 0;
@@ -154,7 +164,7 @@ impl Card {
         }
     }
 
-    fn get_connector_and_crtc(&self) -> (connector::Info, crtc::Info, Mode) {
+    fn get_connector_and_crtc(&self) -> (connector::Info, crtc::Info, Mode, plane::Handle) {
         let res = self
             .resource_handles()
             .expect("Could not load normal resource ids.");
@@ -178,7 +188,33 @@ impl Card {
 
         let crtc = crtcinfo.first().expect("No crtcs found");
 
-        (con.clone(), crtc.clone(), mode)
+        let planes = self.plane_handles().expect("Could not list planes");
+        let plane = planes
+            .into_iter()
+            .find(|&plane| {
+                self.get_plane(plane)
+                    .map(|plane_info| {
+                        let compatible_crtcs = res.filter_crtcs(plane_info.possible_crtcs());
+                        if !compatible_crtcs.contains(&crtc.handle()) {
+                            return false;
+                        }
+                        if let Ok(props) = self.get_properties(plane) {
+                            for (&id, &val) in props.iter() {
+                                if let Ok(info) = self.get_property(id) {
+                                    if info.name().to_str().map(|x| x == "type").unwrap_or(false) {
+                                        return val
+                                            == (drm::control::PlaneType::Primary as u32).into();
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    })
+                    .unwrap_or(false)
+            })
+            .expect("Failed to find primary plane");
+
+        (con.clone(), crtc.clone(), mode, plane)
     }
 }
 pub struct DrmContext {
@@ -195,6 +231,8 @@ pub struct DrmContext {
     keyboard_state: KeyboardState,
     mouse_state: MouseState,
     focused: bool,
+    plane: plane::Handle,
+    plane_properties: HashMap<String, property::Info>,
 }
 
 fn find_egl_config(egl_display: &egl::display::Display) -> egl::config::Config {
@@ -225,16 +263,20 @@ impl GlesContext for DrmContext {
     fn size(&self) -> (u32, u32) {
         (self.mode.size().0 as u32, self.mode.size().1 as u32)
     }
-
-    
 }
 
 impl DrmContext {
     pub fn new() -> Self {
         let card = Card::open_global();
-        let (connector, crtc, mode) = card.get_connector_and_crtc();
-        let (disp_width, disp_height) = mode.size();
+
+        card.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
+            .expect("Unable to request UniversalPlanes capability");
+        card.set_client_capability(drm::ClientCapability::Atomic, true)
+            .expect("Unable to request Atomic capability");
+
+        let (connector, crtc, mode, plane) = card.get_connector_and_crtc();
         let gbm = gbm::Device::new(card).unwrap();
+        let (disp_width, disp_height) = mode.size();
         let rdh = RawDisplayHandle::Gbm(GbmDisplayHandle::new(
             NonNull::new(gbm.as_raw_mut()).unwrap().cast(),
         ));
@@ -281,7 +323,8 @@ impl DrmContext {
             "",
             None,
             xkbcommon::xkb::KEYMAP_COMPILE_NO_FLAGS,
-        ).unwrap();
+        )
+        .unwrap();
         let xkb_state = xkbcommon::xkb::State::new(&xkb_keymap);
         let tty_fd = TTY.as_raw_fd();
         set_vt_mode(tty_fd).expect("Failed to set VT mode");
@@ -291,7 +334,6 @@ impl DrmContext {
         }
         let mut context = DrmContext {
             display: egl_display,
-            gbm,
             gbm_surface,
             surface,
             context,
@@ -302,34 +344,121 @@ impl DrmContext {
             xkb_state,
             mouse_state: MouseState::new_at_middle(disp_width as u32, disp_height as u32),
             keyboard_state: KeyboardState::new(),
-            focused: true
+            focused: true,
+            plane,
+            plane_properties: gbm
+                .get_properties(plane)
+                .and_then(|p| p.as_hashmap(&gbm))
+                .unwrap_or_default(),
+            gbm,
         };
         gl::load_with(|symbol| context.get_proc_address(symbol));
         context
     }
-    
+
     fn _swap_buffers(&self) -> color_eyre::Result<()> {
         unsafe {
+            gl::Flush();
+            let egl = self.display.egl();
+            let display = egl.GetCurrentDisplay();
+            egl.SwapInterval(display, 1);
+            let egl_fence = egl.CreateSyncKHR(
+                display,
+                0x30F9, // SYNC_FENCE_KHR
+                std::ptr::null(),
+            );
+            egl.ClientWaitSyncKHR(display, egl_fence, 0, u64::MAX);
+            egl.DestroySyncKHR(display, egl_fence);
             self.surface.swap_buffers(&self.context)?;
+
             let frontbuffer = self.gbm_surface.lock_front_buffer()?;
             let fb = self.gbm.add_framebuffer(&frontbuffer, 24, 32)?;
+            let con_props = self
+                .gbm
+                .get_properties(self.connector.handle())?
+                .as_hashmap(&self.gbm)?;
+            let crtc_props = self
+                .gbm
+                .get_properties(self.crtc.handle())?
+                .as_hashmap(&self.gbm)?;
+            let plane = self.plane;
+            let mut atomic_req = AtomicModeReq::new();
 
-            self.gbm.wait_vblank(
-                drm::VblankWaitTarget::Relative(1),
-                VblankWaitFlags::empty(),
-                u32::from(self.crtc.handle()) >> 27,
-                0,
-            )?;
+            atomic_req.add_property(
+                self.connector.handle(),
+                con_props["CRTC_ID"].handle(),
+                property::Value::CRTC(Some(self.crtc.handle())),
+            );
+
+            let blob = self
+                .gbm
+                .create_property_blob(&self.mode)
+                .expect("Failed to create blob");
+            atomic_req.add_property(self.crtc.handle(), crtc_props["MODE_ID"].handle(), blob);
+            atomic_req.add_property(
+                self.crtc.handle(),
+                crtc_props["ACTIVE"].handle(),
+                property::Value::Boolean(true),
+            );
+
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["FB_ID"].handle(),
+                property::Value::Framebuffer(Some(fb)),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["CRTC_ID"].handle(),
+                property::Value::CRTC(Some(self.crtc.handle())),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["SRC_X"].handle(),
+                property::Value::UnsignedRange(0),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["SRC_Y"].handle(),
+                property::Value::UnsignedRange(0),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["SRC_W"].handle(),
+                property::Value::UnsignedRange((self.mode.size().0 as u64) << 16),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["SRC_H"].handle(),
+                property::Value::UnsignedRange((self.mode.size().1 as u64) << 16),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["CRTC_X"].handle(),
+                property::Value::SignedRange(0),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["CRTC_Y"].handle(),
+                property::Value::SignedRange(0),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["CRTC_W"].handle(),
+                property::Value::UnsignedRange(self.mode.size().0 as u64),
+            );
+            atomic_req.add_property(
+                plane,
+                self.plane_properties["CRTC_H"].handle(),
+                property::Value::UnsignedRange(self.mode.size().1 as u64),
+            );
+
             self.gbm
-                .set_crtc(
-                    self.crtc.handle(),
-                    Some(fb),
-                    (0, 0),
-                    &[self.connector.handle()],
-                    Some(self.mode),
-                )?;
+                .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)
+                .expect("Failed to commit atomic request");
+            // FIXME: Try to fix the stupid tearing, i'm already wanting to kill myself because I already spent
+            // +4 hours trying to solve tearing I can't do this anymore
+            Ok(())
         }
-        Ok(())
     }
 }
 

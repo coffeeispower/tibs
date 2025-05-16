@@ -3,9 +3,9 @@ use crate::input::Input;
 use super::GlfwContext;
 use crate::input::MouseButton;
 use glfw::{Action, Key, MouseButton as GlfwMouseButton};
+use input::event::keyboard::KeyState as LibInputKeyState;
 use std::collections::HashSet;
 use xkbcommon::xkb::Keysym;
-use input::event::keyboard::KeyState as LibInputKeyState;
 
 fn glfw_key_to_keysym(glfw_key: Key) -> Option<Keysym> {
     Some(match glfw_key {
@@ -151,7 +151,6 @@ impl Input for GlfwContext {
         !self.is_key_down(key_code)
     }
 
-
     fn is_mouse_button_down(&self, button: crate::input::MouseButton) -> bool {
         if let Some(glfw_button) = mouse_button_to_glfw(button) {
             let action = self.window.borrow().get_mouse_button(glfw_button);
@@ -192,16 +191,19 @@ impl Input for GlfwContext {
 
         // Poll GLFW for events and process them.
         self.glfw.borrow_mut().poll_events();
+
         for (_, event) in glfw::flush_messages(&self.events) {
             match event {
                 glfw::WindowEvent::Key(key, _scancode, action, _mods) => {
                     if let Some(keysym) = glfw_key_to_keysym(key) {
                         match action {
                             Action::Press => {
-                                self.keyboard_state.process_keyboard_event(keysym, LibInputKeyState::Pressed);
+                                self.keyboard_state
+                                    .process_keyboard_event(keysym, LibInputKeyState::Pressed);
                             }
                             Action::Release => {
-                                self.keyboard_state.process_keyboard_event(keysym, LibInputKeyState::Released);
+                                self.keyboard_state
+                                    .process_keyboard_event(keysym, LibInputKeyState::Released);
                             }
                             _ => {}
                         }
@@ -210,9 +212,10 @@ impl Input for GlfwContext {
                 glfw::WindowEvent::Scroll(xoffset, yoffset) => {
                     self.mouse_wheel_delta.0 += xoffset;
                     self.mouse_wheel_delta.1 += yoffset;
-                    dbg!(xoffset, yoffset);
                 }
-                _ => {}
+                e => {
+                    dbg!(e);
+                }
             }
         }
 
@@ -233,7 +236,7 @@ impl Input for GlfwContext {
     fn should_close(&self) -> bool {
         self.window.borrow().should_close()
     }
-    
+
     fn is_key_released(&self, key_code: xkbcommon::xkb::Keysym) -> bool {
         self.keyboard_state.was_key_released(key_code)
     }
@@ -260,5 +263,4 @@ impl Input for GlfwContext {
     fn has_focus(&self) -> bool {
         true
     }
-    
 }

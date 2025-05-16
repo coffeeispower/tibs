@@ -1,9 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use clay_layout::{fixed, grow, id, Declaration};
+use animation::easing::ease_in_out_cubic;
+use background::Background;
+use clay_layout::{fixed, grow, Declaration};
 use skia_clay::SkiaClayScope;
 use xkbcommon::xkb::Keysym;
 
+pub mod background;
 pub mod custom_elements;
 pub mod fps_counter;
 pub mod gl;
@@ -20,6 +23,7 @@ pub mod progress_watcher;
 pub mod skia;
 pub mod skia_clay;
 pub mod skia_image_asset;
+pub mod skia_shader_asset;
 pub mod textbox;
 pub type TibsClayScope<'clay, 'render> =
     SkiaClayScope<'clay, 'render, custom_elements::CustomElements>;
@@ -46,7 +50,7 @@ pub static FONTS: LazyLock<Vec<&Typeface>> = LazyLock::new(|| vec![&UBUNTU_FONT]
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-
+    env_logger::init();
     let mut boot_progress = progress_watcher::ProgressWatcher::new();
     let mut context = select_and_init_context();
     let mut fps_counter = fps_counter::FPSCounter::new();
@@ -66,10 +70,11 @@ fn main() -> color_eyre::Result<()> {
         let progress = boot_progress.poll_progress();
         progress.finished && !progress.has_failed_services()
     };
-    let mut screen_slide_animation = BasicAnimation::new("screen_slide", 1.0, ease_in_out_circ);
+    let mut screen_slide_animation = BasicAnimation::new("screen_slide", 1.5, ease_in_out_circ);
     let mut show_login_screen = skip_animation;
     let mut screen_slide_animation_progress: f32 = skip_animation as u8 as f32;
     let mut devtools = false;
+    let mut background = Background::new(&assets);
     while !context.should_close() {
         context.poll_events();
 
@@ -94,20 +99,34 @@ fn main() -> color_eyre::Result<()> {
                 .get(0)
             {
                 screen_slide_animation_progress = *p;
+                background.time_offset = screen_slide_animation_progress * 5.0;
             }
         }
+        background.update(delta);
+
+        clay.pointer_state(
+            (mouse_position.0, mouse_position.1).into(),
+            context.is_mouse_button_down(input::MouseButton::Left),
+        );
+        clay.update_scroll_containers(true, context.mouse_wheel().into(), delta);
+
+        if let Some(fps) = fps_counter.tick() {
+            println!("FPS: {:.2}", fps);
+        }
+        assets.hot_reload();
 
         // Render
         gl!(gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT));
         let canvas = skia_surface.canvas();
+
+        background.render(canvas);
+
         {
             let mut c = clay.begin::<_, CustomElements>();
             let root_container_scroll = c.scroll_container_data(c.id("root"));
 
             if let Some(root_container_scroll) = root_container_scroll {
-                unsafe {
-                    (*root_container_scroll.scrollPosition).y = -camera_y
-                }
+                unsafe { (*root_container_scroll.scrollPosition).y = -camera_y }
             }
             c.with(
                 Declaration::new()
@@ -170,16 +189,6 @@ fn main() -> color_eyre::Result<()> {
         {
             skia_surface = create_skia_surface(&mut skia_context, screen_width, screen_height)?;
             clay.set_layout_dimensions((screen_width as f32, screen_height as f32).into());
-        }
-
-        clay.pointer_state(
-            (mouse_position.0, mouse_position.1).into(),
-            context.is_mouse_button_down(input::MouseButton::Left),
-        );
-        clay.update_scroll_containers(true, context.mouse_wheel().into(), delta);
-
-        if let Some(fps) = fps_counter.tick() {
-            println!("FPS: {:.2}", fps);
         }
     }
 

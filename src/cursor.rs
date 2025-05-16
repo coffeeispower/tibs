@@ -17,11 +17,11 @@ pub struct Cursor {
 impl Cursor {
     pub fn new(cursor_size: impl Into<Option<u32>>) -> Self {
         let cursor_size = cursor_size.into().unwrap_or(24);
-        println!("[DEBUG] Initializing Cursor with size {}.", cursor_size);
+        log::debug!("Initializing Cursor with size {}.", cursor_size);
         let manager = HyprCursorManager::new(Some(c""));
         let style_info = manager.new_style_info(cursor_size);
         manager.load_theme_style(&style_info);
-        println!("[DEBUG] Loaded theme style for cursor.");
+        log::debug!("Loaded theme style for cursor.");
         Self {
             cursors: HashMap::new(),
             cursor_size,
@@ -31,18 +31,18 @@ impl Cursor {
     }
 
     fn load_cursor(&mut self, cursor_name: &str) {
-        println!("[DEBUG] Attempting to load cursor: {}", cursor_name);
+        log::debug!("Attempting to load cursor: {}", cursor_name);
         let image = if self.cursor_manager.is_theme_valid() {
-            println!("[DEBUG] Cursor manager theme is valid.");
+            log::debug!("Cursor manager theme is valid.");
             let c_cursor_name = CString::new(cursor_name).unwrap();
             let data = self
                 .cursor_manager
                 .get_cursor_image_data(&c_cursor_name, &self.style_info);
             if data.is_empty() {
-                println!("[DEBUG] No image data found for cursor: {}", cursor_name);
+                log::debug!("No image data found for cursor: {}", cursor_name);
                 return;
             }
-            println!("[DEBUG] Received image data, extracting Cairo surface.");
+            log::debug!("Received image data, extracting Cairo surface.");
             // Get a cairo surface from the first image data entry.
             let surface = data[0].surface();
 
@@ -59,14 +59,14 @@ impl Cursor {
                 ImageSurface::create(Format::ARgb32, width as i32, height as i32)
                     .expect("Failed to create Cairo ImageSurface");
             {
-                println!("[DEBUG] Creating Cairo context to draw the cursor.");
+                log::debug!("Creating Cairo context to draw the cursor.");
                 // Create a Cairo context and draw the original surface onto the new one
                 let context = cairo::Context::new(&image_surface).unwrap();
                 context.set_source_surface(&surface, 0.0, 0.0).unwrap();
                 context.paint().expect("Failed to paint onto ImageSurface");
-                println!("[DEBUG] Finished drawing the cursor onto Cairo ImageSurface.");
+                log::debug!("Finished drawing the cursor onto Cairo ImageSurface.");
             }
-            println!("[DEBUG] Accessing raw pixel data from the Cairo ImageSurface.");
+            log::debug!("Accessing raw pixel data from the Cairo ImageSurface.");
             // Access the raw pixel data from the ImageSurface
             let img_data = image_surface
                 .data()
@@ -74,8 +74,8 @@ impl Cursor {
                 .to_vec();
             let width = image_surface.width();
             let height = image_surface.height();
-
-            println!("[DEBUG] Creating Skia Image from the raw pixel data.");
+            
+            log::debug!("Creating Skia Image from the raw pixel data.");
             // Create a Skia image directly from the raw pixel data.
             let image_info = ImageInfo::new(
                 (width, height),
@@ -91,34 +91,31 @@ impl Cursor {
             )
             .expect("Failed to create Skia Image from raster data");
 
-            println!(
-                "[DEBUG] Successfully created Skia Image for cursor: {}",
+            log::debug!("Successfully created Skia Image for cursor: {}",
                 cursor_name
             );
 
-            println!("[DEBUG] Freeing hyprcursor image data.");
+            log::debug!("Freeing hyprcursor image data.");
             // Free the hyprcursor image data.
             unsafe { hyprcursor_cursor_image_data_free(data.as_mut_ptr().cast(), data.len() as _) }
             Some(image)
         } else {
-            println!(
-                "[DEBUG] Cursor manager theme is not valid. Skipping cursor load for: {}",
+            log::debug!("Cursor manager theme is not valid. Skipping cursor load for: {}",
                 cursor_name
             );
             None
         };
         if let Some(image) = image {
             self.cursors.insert(cursor_name.to_owned(), image);
-            println!("[DEBUG] Cursor '{}' loaded and stored.", cursor_name);
+            log::debug!("Cursor '{}' loaded and stored.", cursor_name);
         } else {
-            println!("[DEBUG] Cursor '{}' failed to load.", cursor_name);
+            log::debug!("Cursor '{}' failed to load.", cursor_name);
         }
     }
 
     pub fn get_or_load_cursor(&mut self, cursor_name: &str) -> Option<&Image> {
         if !self.cursors.contains_key(cursor_name) {
-            println!(
-                "[DEBUG] Cursor '{}' not found in cache, loading now.",
+            log::debug!("Cursor '{}' not found in cache, loading now.",
                 cursor_name
             );
             self.load_cursor(cursor_name);
@@ -145,7 +142,7 @@ impl Cursor {
                 &Paint::default().set_anti_alias(true),
             );
         } else {
-            println!("[DEBUG] Fallback rendering for cursor '{}'.", cursor_name);
+            log::debug!("Fallback rendering for cursor '{}'.", cursor_name);
             // Fallback: draw a circle.
             let cursor_radius = if input.is_mouse_button_down(MouseButton::Left) {
                 5.0

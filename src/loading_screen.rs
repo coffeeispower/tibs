@@ -50,10 +50,7 @@ impl LoadingScreen {
             ProgressBarAnimation::new("progress", 2.5);
         Self {
             loading_animation: all!(
-                seq!(
-                    BasicAnimation::new("bg", 0.25, ease_out_quint),
-                    BasicAnimation::new("logo", 2.0, ease_out_elastic)
-                ),
+                BasicAnimation::new("logo", 2.0, ease_out_elastic),
                 progress_bar_animation
             ),
             end_progress: BasicAnimation::new("end_progress", 0.25, ease_out_quad),
@@ -97,15 +94,7 @@ impl LoadingScreen {
                 .direction(LayoutDirection::TopToBottom)
                 .width(grow!())
                 .height(grow!())
-                .end()
-                .background_color(
-                    animation::colors::interpolate_color(
-                        (0, 0, 0),
-                        (0x0F, 0x14, 0x19),
-                        self.get_animation_progress("bg"),
-                    )
-                    .into(),
-                ),
+                .end(),
             |c| {
                 self.logo(c);
                 c.with(

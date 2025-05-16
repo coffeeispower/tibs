@@ -35,15 +35,13 @@ impl GlfwContext {
                     800,
                     title,
                     glfw::WindowMode::Windowed
-                    // m.map_or(glfw::WindowMode::Windowed, |m| {
-                    //     glfw::WindowMode::FullScreen(m)
-                    // }),
                 )
             })
             .expect("Failed to create GLFW window.");
 
         window.make_current();
         window.set_key_polling(true);
+        window.set_scroll_polling(true);
         window.set_cursor_mode(glfw::CursorMode::Hidden);
         let mut context = GlfwContext {
             glfw: RefCell::new(glfw),

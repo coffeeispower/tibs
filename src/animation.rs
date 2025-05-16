@@ -555,6 +555,14 @@ pub mod colors {
         let b = u8::from_str_radix(&rgb[5..7], 16).expect("Invalid blue component") as f32 / 255.0;
         (r, g, b)
     }
+    pub fn rgba_to_norm(rgb: &str) -> (f32, f32, f32, f32) {
+        assert!(rgb.len() == 9 && rgb.starts_with('#'), "Invalid RGB format");
+        let r = u8::from_str_radix(&rgb[1..3], 16).expect("Invalid red component") as f32 / 255.0;
+        let g = u8::from_str_radix(&rgb[3..5], 16).expect("Invalid green component") as f32 / 255.0;
+        let b = u8::from_str_radix(&rgb[5..7], 16).expect("Invalid blue component") as f32 / 255.0;
+        let a = u8::from_str_radix(&rgb[7..9], 16).expect("Invalid alpha component") as f32 / 255.0;
+        (r, g, b, a)
+    }
 }
 
 #[cfg(test)]
@@ -639,6 +647,7 @@ mod tests {
 }
 #[macro_export]
 macro_rules! all {
+	() => {$crate::animation::ParallelAnimation::new(vec![])};
     ( $( $x:expr ),* ) => {
         {
             let mut animations: Vec<Box<dyn $crate::animation::Animation>> = Vec::new();
