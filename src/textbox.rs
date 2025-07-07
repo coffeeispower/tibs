@@ -1,8 +1,7 @@
-use crate::{TibsClayScope, FONTS};
+use crate::{skia_clay::create_measure_text_function, TibsClayScope, FONTS};
 use clay_layout::{
 	fixed, grow,
 	layout::{Alignment, Padding},
-	renderers::skia::create_measure_text_function,
 	text::TextConfig,
 	Clay, Declaration,
 };
@@ -16,6 +15,7 @@ pub struct Textbox {
 	censored_buffer: String,
 	id: String,
 	pub hide_input: bool,
+	pub disabled: bool,
 }
 
 impl Textbox {
@@ -27,6 +27,7 @@ impl Textbox {
 			censored_buffer: String::new(),
 			id: id.into(),
 			hide_input,
+			disabled: false,
 		}
 	}
 	fn chars_count(s: &str) -> usize {
@@ -135,7 +136,7 @@ impl Textbox {
 	where
 		'clay: 'render,
 	{
-		if !self.focused {
+		if !self.focused || self.disabled {
 			return;
 		}
 		self.handle_mouse_clicks(rmar, c);
@@ -211,16 +212,35 @@ impl Textbox {
 				let cursor_byte_index = Self::char_index_to_byte_index(buffer_to_render, self.cursor);
 				c.text(
 					&buffer_to_render[..cursor_byte_index],
-					Self::text_config().end(),
+					Self::text_config()
+						.color(
+							if self.disabled {
+								(0xFF, 0xFF, 0xFF, 0x50)
+							} else {
+								(0xFF, 0xFF, 0xFF, 0xFF)
+							}
+							.into(),
+						)
+						.end(),
 				);
 				if self.focused {
 					c.with(
 						Declaration::new()
 							.layout()
-							.width(fixed!(1.))
+							.width(fixed!(0.))
 							.height(grow!())
 							.end()
-							.background_color((0xff, 0xff, 0xff).into()),
+							.border()
+							.left(1)
+							.color(
+								if self.disabled {
+									(0xFF, 0xFF, 0xFF, 0x60)
+								} else {
+									(0xFF, 0xFF, 0xFF, 0xFF)
+								}
+								.into(),
+							)
+							.end(),
 						|_| {},
 					);
 				}

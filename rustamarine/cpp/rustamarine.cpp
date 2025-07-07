@@ -45,6 +45,7 @@ void setupEventListeners(SP<Rustamarine> rmar) {
 
 						rmar->screens.push_back(createScreenFromOutput(rmar, output));
 					});
+
 }
 
 Rustamarine *rmarInitialize() {
@@ -112,4 +113,15 @@ void rmarFreeScreens(struct RustamarineScreens screens) {
 }
 struct Rustamarine *rmarFromScreen(struct RustamarineScreen *screen) {
 	return screen->rustamarine.get();
+}
+bool rmarIsDRM(struct Rustamarine* rmar) {
+	return rmar->backend->hasSession();
+}
+
+void rmarGoToTTY(struct Rustamarine *rmar, uint16_t tty) {
+	rmar->backend->session->switchVT(tty);
+}
+bool rmarIsOnOriginalTTY(struct Rustamarine* rmar) {
+	if(!rmarIsDRM(rmar)) return true;
+	return rmar->backend->session->active;
 }

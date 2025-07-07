@@ -29,6 +29,14 @@ impl Rustamarine {
 		let name_cstring = CString::from_str(name).unwrap();
 		unsafe { sys::rmarGetProcAddress(self.inner, name_cstring.as_ptr()) }
 	}
+
+	pub fn is_drm(&self) -> bool {
+		unsafe { sys::rmarIsDRM(self.inner) }
+	}
+
+	pub fn go_to_tty(&mut self, tty: u16) {
+		unsafe { sys::rmarGoToTTY(self.inner, tty) }
+	}
 }
 
 impl Drop for Rustamarine {

@@ -1,13 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, sync::mpsc::Sender};
 
 use assets_manager::AssetCache;
 use rand::Rng;
 use skia_safe::{Canvas, Paint, Rect, RuntimeEffect};
 
 use crate::{
-	all,
-	animation::{colors, easing, Animation, BasicAnimation},
-	skia_shader_asset::SkiaShaderAsset,
+	all, animation::{self, colors::{self, interpolate_color_normalized}, easing, Animation, BasicAnimation}, login::{LoginManager, LoginState}, login_screen, skia_shader_asset::SkiaShaderAsset
 };
 
 pub struct Background {
@@ -16,12 +14,16 @@ pub struct Background {
 	elapsed_time: f32,
 	pub time_offset: f32,
 	fade_in_animation: Box<dyn Animation>, // Animação para o fade-in das cores
+	success_animation: Box<dyn Animation>,
+	success_animation_target: Sender<f32>,
+
 }
 impl Background {
 	pub fn new(assets: Rc<AssetCache>) -> Self {
 		fn rd() -> f32 {
 			rand::rng().random_range(0.4..7.0)
 		}
+		let (success_animation, success_animation_target) = animation::ProgressBarAnimation::new("success_animation", 5.0);
 		Self {
 			assets,
 			animations_state: HashMap::new(),
@@ -32,11 +34,13 @@ impl Background {
 				BasicAnimation::new("color_3", rd(), easing::ease_out_quad),
 				BasicAnimation::new("color_4", rd(), easing::ease_out_quad)
 			)),
+			success_animation: Box::new(success_animation),
 			elapsed_time: 0.0,
 			time_offset: 0.0,
+			success_animation_target
 		}
 	}
-	pub fn update(&mut self, delta: f32) {
+	pub fn update(&mut self, delta: f32, login_manager: &LoginManager, login_screen: &login_screen::LoginScreen) {
 		// Incrementa o tempo com base na velocidade
 		self.elapsed_time += delta;
 
@@ -44,6 +48,18 @@ impl Background {
 		self
 			.animations_state
 			.extend(self.fade_in_animation.update(delta));
+		self
+			.animations_state
+			.extend(self.success_animation.update(delta));
+		let login_state = login_manager.get_current_login_state(login_screen.username());
+		match login_state {
+			Some(LoginState::Authenticated(_)) => {
+				self.success_animation_target.send(1.0);
+			},
+			_ => {
+				self.success_animation_target.send(0.0);
+			}
+		}
 	}
 	pub fn render(&self, canvas: &Canvas) {
 		let light_shader = self
@@ -62,18 +78,13 @@ impl Background {
 			colors: [(f32, f32, f32); 5],
 			forces: [f32; 5],
 		}
+		let success_animation = self.get_animation_progress("success_animation");
 		let target_colors = [
-			// (1.00, 0.74, 0.63), // Laranja pastel
-			// (0.87, 0.07, 0.27), // Vermelho vivo
-			// (0.98, 0.91, 0.63), // Amarelo suave
-			// (0.63, 0.82, 0.80), // Azul esverdeado
-			// colors::rgb_to_norm("#FF8966"),
-			colors::rgb_to_norm("#0F1419"),
-			colors::rgb_to_norm("#225282"),
-			colors::rgb_to_norm("#112f4e"),
-			colors::rgb_to_norm("#031120"),
-			colors::rgb_to_norm("#38628f"),
-
+			interpolate_color_normalized(colors::rgb_to_norm("#0F1419"), colors::rgb_to_norm("#0f1a13"), success_animation),
+			interpolate_color_normalized(colors::rgb_to_norm("#225282"), colors::rgb_to_norm("#218245"), success_animation),
+			interpolate_color_normalized(colors::rgb_to_norm("#112f4e"), colors::rgb_to_norm("#114f28"), success_animation),
+			interpolate_color_normalized(colors::rgb_to_norm("#031120"), colors::rgb_to_norm("#03210e"), success_animation),
+			interpolate_color_normalized(colors::rgb_to_norm("#38628f"), colors::rgb_to_norm("#388f58"), success_animation),
 		];
 		// Interpolação das cores com base no progresso das animações
 		let interpolated_colors: [(f32, f32, f32); 5] = target_colors

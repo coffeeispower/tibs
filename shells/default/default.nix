@@ -32,6 +32,8 @@ mkShell rec {
     libgbm
     libunwind.dev
     libbacktrace
+    pkgs.llvmPackages_16.libclang.lib
+    pam
   ];
   LD_LIBRARY_PATH = lib.makeLibraryPath packages;
   LIBCLANG_PATH = "${pkgs.llvmPackages_16.libclang.lib}/lib";

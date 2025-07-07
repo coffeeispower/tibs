@@ -2,6 +2,7 @@
 
 
 #ifdef __cplusplus
+#include <stdint.h>
 extern "C" {
 #endif
 #include <stdbool.h>
@@ -57,6 +58,10 @@ double rmarGetMouseScrollY(struct Rustamarine* rmar);
 
 
 const char* rmarGetTypedCharacters(struct Rustamarine* rmar);
+
+bool rmarIsDRM(struct Rustamarine* rmar);
+void rmarGoToTTY(struct Rustamarine* rmar, uint16_t tty);
+bool rmarIsOnOriginalTTY(struct Rustamarine* rmar);
 #ifdef __cplusplus
 }
 #endif

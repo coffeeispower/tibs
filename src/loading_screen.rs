@@ -330,7 +330,7 @@ impl LoadingScreen {
 						.width(Sizing::Fixed(self.get_animation_progress("logo") * 183.))
 						.height(Sizing::Fixed(self.get_animation_progress("logo") * 183.))
 						.end(),
-						// .aspect_ratio(self.logo.width() as f32 / self.logo.height() as f32),
+					// .aspect_ratio(self.logo.width() as f32 / self.logo.height() as f32),
 					|_| {},
 				)
 			},

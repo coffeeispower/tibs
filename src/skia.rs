@@ -1,5 +1,5 @@
 use color_eyre::eyre::bail;
-use libc::c_char;
+use nix::libc::c_char;
 use rustamarine::{screen::Screen, Rustamarine};
 use skia_safe::{
 	gpu::{
@@ -19,9 +19,9 @@ pub const FRAMEBUFFER_INFO: FramebufferInfo = FramebufferInfo {
 	protected: skia_safe::gpu::Protected::No,
 };
 pub fn init_skia(screen: &mut Screen) -> color_eyre::Result<(DirectContext, Surface)> {
-	let Some(interface) = Interface::new_load_with(|fn_name| {
-	screen.get_rustamarine().get_opengl_proc_address(fn_name)
-	}) else {
+	let Some(interface) =
+		Interface::new_load_with(|fn_name| screen.get_rustamarine().get_opengl_proc_address(fn_name))
+	else {
 		bail!("Failed to initialize skia (interface)");
 	};
 	let Some(mut skia_context) = direct_contexts::make_gl(interface, None) else {

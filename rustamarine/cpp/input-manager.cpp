@@ -261,7 +261,6 @@ void Keyboard::handleKeyEvent(xkb_keysym_t keysym) {
 	}
 	buffer[bufferLen] = 0;
 	inputManager->currentFrameUtf8Input = inputManager->currentFrameUtf8Input + buffer;
-	std::println("{}", inputManager->currentFrameUtf8Input);
 }
 
 // Implementation of InputManager

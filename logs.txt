@@ -1,0 +1,74 @@
+First render took: 7.261479ms
+[DEBUG] Creating new Cairo ImageSurface with dimensions: 24x24
+FPS: 56.18
+FPS: 60.17
+FPS: 59.18
+FPS: 60.15
+FPS: 60.19
+FPS: 60.16
+[INFO] Logged into 1000
+FPS: 60.15
+FPS: 60.16
+FPS: 60.21
+FPS: 60.12
+FPS: 60.16
+FPS: 60.16
+FPS: 60.17
+[INFO] Logged into 1000
+FPS: 60.16
+[INFO] Logged into 1000
+[INFO] Logged into 1000
+FPS: 60.18
+[INFO] Logged into 1000
+[INFO] Logged into 1000
+FPS: 60.16
+[INFO] Logged into 1000
+[INFO] Logged into 1000
+[INFO] Logged into 1000
+[INFO] Logged into 1000
+FPS: 60.15
+[INFO] Logged into 1000
+FPS: 60.16
+FPS: 60.17
+FPS: 60.17
+FPS: 60.16
+FPS: 60.15
+[ERROR] Failed to authenticate: Auth_Err
+FPS: 59.18
+FPS: 60.17
+FPS: 60.19
+FPS: 60.13
+FPS: 60.21
+[INFO] Logged into 1000
+FPS: 60.13
+FPS: 60.15
+[AQ] [ERROR] drm: getCurrentCRTC: No CRTC 0
+[AQ] [ERROR] drm: getCurrentCRTC: No CRTC 0
+LOG: Monitor eDP-1: using preferred mode 1920x1080@60.16Hz
+[LOG] eglDeviceFromDRMFD: Using device /dev/dri/card1
+[LOG] EGL version: 1.5
+[LOG] Initialized OpenGL Context!
+[LOG] Using: OpenGL ES 3.2 Mesa 25.0.6
+[LOG] Vendor: Intel
+[LOG] Renderer: Mesa Intel(R) UHD Graphics (ICL GT1)
+Created renderbuffer:
+  RenderBufferID: 1
+  FrameBufferID: 1
+  EGLImage: 0x55b9b51927b0
+  Size: 1920x1080
+[LOG] eglDeviceFromDRMFD: Using device /dev/dri/card1
+New mouse: wl_pointer
+LOG: Monitor WAYLAND-1: using custom mode 960x540@0.00Hz
+Created renderbuffer:
+  RenderBufferID: 2
+  FrameBufferID: 2
+  EGLImage: 0x55b9b5663960
+  Size: 960x540
+Created renderbuffer:
+  RenderBufferID: 3
+  FrameBufferID: 3
+  EGLImage: 0x55b9b5690320
+  Size: 1920x1080
+New mouse: Elan Touchpad
+New mouse: Microsoft Bluetooth Mouse
+render buffer destroyed

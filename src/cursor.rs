@@ -6,8 +6,8 @@ use libhyprcursor_sys::hyprcursor_cursor_image_data_free;
 use rustamarine::Rustamarine;
 use skia_safe::{self, images, Image, ImageInfo, Paint, Point, Rect, SamplingOptions};
 struct CursorVariation {
-  image: Image,
-  hotspot: (i32, i32)
+	image: Image,
+	hotspot: (i32, i32),
 }
 pub struct Cursor {
 	cursors: HashMap<String, CursorVariation>,
@@ -125,8 +125,12 @@ impl Cursor {
 
 	pub fn render(&mut self, skia_canvas: &skia_safe::Canvas, rmar: &Rustamarine, cursor_name: &str) {
 		let (mx, my) = (rmar.get_mouse_x() as f32, rmar.get_mouse_y() as f32);
-		if let Some(CursorVariation {image, hotspot: (hx, hy)}) = self.get_or_load_cursor(cursor_name) {
-		  let pos = Point::new(mx - *hx as f32, my - *hy as f32);
+		if let Some(CursorVariation {
+			image,
+			hotspot: (hx, hy),
+		}) = self.get_or_load_cursor(cursor_name)
+		{
+			let pos = Point::new(mx - *hx as f32, my - *hy as f32);
 			let dest_rect = Rect::from_xywh(pos.x, pos.y, image.width() as f32, image.height() as f32);
 			skia_canvas.draw_image_rect_with_sampling_options(
 				image,
@@ -136,7 +140,7 @@ impl Cursor {
 				&Paint::default().set_anti_alias(true),
 			);
 		} else {
-		  let pos = Point::new(mx, my);
+			let pos = Point::new(mx, my);
 			log::debug!("Fallback rendering for cursor '{}'.", cursor_name);
 			// Fallback: draw a circle.
 			let cursor_radius = if rmar.is_mouse_button_down(0) {

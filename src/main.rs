@@ -3,28 +3,27 @@
 use background::Background;
 use clay_layout::{
 	fixed, grow,
-	renderers::{
-		clay_skia_render,
-		skia::{create_measure_text_function, SkiaClayScope},
-	},
 	Declaration,
 };
 use rustamarine::screen::Screen;
+pub mod skia_clay;
 pub mod background;
 pub mod custom_elements;
 pub mod fps_counter;
 pub mod gl;
 pub mod gl_errors;
-pub mod login_screen;
 #[macro_use]
 pub mod animation;
 pub mod cursor;
 pub mod loading_screen;
+pub mod login;
 pub mod progress_watcher;
+pub mod session_manager;
 pub mod skia;
 pub mod skia_image_asset;
 pub mod skia_shader_asset;
 pub mod textbox;
+pub mod tty;
 pub type TibsClayScope<'clay, 'render> =
 	SkiaClayScope<'clay, 'render, custom_elements::CustomElements>;
 
@@ -33,6 +32,8 @@ use crate::{
 	cursor::Cursor,
 	custom_elements::CustomElements,
 	loading_screen::LoadingScreen,
+	login::LoginManager,
+	session_manager::SessionManager, skia_clay::{create_measure_text_function, SkiaClayScope},
 };
 use assets_manager::AssetCache;
 use skia::{create_skia_surface, init_skia};
@@ -80,6 +81,8 @@ struct AppState {
 	devtools: bool,
 	background: Background,
 	should_exit: bool,
+	login_manager: LoginManager,
+	session_manager: SessionManager,
 }
 
 fn update_app_state(state: &mut AppState, rmar: &rustamarine::Rustamarine, screen: &mut Screen) {
@@ -99,13 +102,17 @@ fn update_app_state(state: &mut AppState, rmar: &rustamarine::Rustamarine, scree
 	let current_time = std::time::Instant::now();
 
 	// Handle escape key to exit
-	if rmar.is_key_down(rustamarine::keys::KEY_Escape) && std::env::var("TIBS_DEV_MODE") == Ok("1".to_string()) {
+	if rmar.is_key_down(rustamarine::keys::KEY_Escape)
+		&& std::env::var("TIBS_DEV_MODE") == Ok("1".to_string())
+	{
 		state.should_exit = true;
 		return;
 	}
 
 	// Toggle devtools with Caps Lock
-	if rmar.is_key_pressed(rustamarine::keys::KEY_Caps_Lock) && std::env::var("TIBS_DEV_MODE") == Ok("1".to_string()) {
+	if rmar.is_key_pressed(rustamarine::keys::KEY_Caps_Lock)
+		&& std::env::var("TIBS_DEV_MODE") == Ok("1".to_string())
+	{
 		state.devtools = !state.devtools;
 		state.clay.set_debug_mode(state.devtools);
 	}
@@ -132,10 +139,12 @@ fn update_app_state(state: &mut AppState, rmar: &rustamarine::Rustamarine, scree
 			state.background.time_offset = state.screen_slide_animation_progress * 5.0;
 		}
 	}
-	state.login_screen.update(&mut state.clay, rmar);
+	state
+		.login_screen
+		.update(&mut state.clay, rmar, &mut state.login_manager);
 	state.loading_screen.update(&progress, delta);
 	// Update background
-	state.background.update(delta);
+	state.background.update(delta, &state.login_manager, &state.login_screen);
 
 	// Update clay pointer state
 	state.clay.pointer_state(
@@ -153,7 +162,6 @@ fn update_app_state(state: &mut AppState, rmar: &rustamarine::Rustamarine, scree
 			.into(),
 		delta,
 	);
-
 	// Hot reload assets
 	state.assets.hot_reload();
 }
@@ -166,8 +174,12 @@ fn ensure_skia_context(state: &mut AppState, screen: &mut Screen) {
 			.clay
 			.set_layout_dimensions((screen_width as f32, screen_height as f32).into());
 
-		screen.get_rustamarine().set_mouse_x(screen_width as i32 / 2);
-		screen.get_rustamarine().set_mouse_y(screen_height as i32 / 2);
+		screen
+			.get_rustamarine()
+			.set_mouse_x(screen_width as i32 / 2);
+		screen
+			.get_rustamarine()
+			.set_mouse_y(screen_height as i32 / 2);
 		state.context = Some(c);
 	} else if let Some(ctx) = &mut state.context {
 		if ctx.skia_surface.width() != screen_width as _
@@ -178,8 +190,12 @@ fn ensure_skia_context(state: &mut AppState, screen: &mut Screen) {
 			state
 				.clay
 				.set_layout_dimensions((screen_width as f32, screen_height as f32).into());
-			screen.get_rustamarine().set_mouse_x(screen_width as i32 / 2);
-			screen.get_rustamarine().set_mouse_y(screen_height as i32 / 2);
+			screen
+				.get_rustamarine()
+				.set_mouse_x(screen_width as i32 / 2);
+			screen
+				.get_rustamarine()
+				.set_mouse_y(screen_height as i32 / 2);
 		}
 	}
 }
@@ -242,18 +258,17 @@ fn render_app(state: &mut AppState, screen: &mut Screen) {
 						.height(fixed!(screen_height as f32))
 						.end(),
 					|c| {
-						state.login_screen.render(c);
+						state.login_screen.render(c, &state.login_manager);
 					},
 				);
 			},
 		);
-		clay_skia_render(canvas, c.end(), CustomElements::render, &FONTS);
+		skia_clay::clay_skia_render(canvas, c.end(), CustomElements::render, &FONTS);
 	}
 
 	if progress.finished {
 		state.cursor.render(canvas, &rmar, "default");
 	}
-
 
 	skia_context.flush(None);
 	// Update FPS counter
@@ -303,6 +318,8 @@ fn main() -> color_eyre::Result<()> {
 		background: Background::new(Rc::clone(&assets)),
 		assets,
 		should_exit: false,
+		login_manager: LoginManager::new(),
+		session_manager: SessionManager::new(),
 	});
 	let start_instant = std::time::Instant::now();
 	let mut first_render = false;
